@@ -24,7 +24,6 @@ from PIL import Image
 logo = Image.open("imagen.png")
 
 st.sidebar.image(logo, width=250)
-st.sidebar.title("División Agropecuaria")
 st.sidebar.caption("Soluciones en Agricultura de Precisión")
 st.sidebar.markdown("---")
 
