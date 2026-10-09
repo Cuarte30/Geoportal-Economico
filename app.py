@@ -9,7 +9,11 @@ import numpy as np
 import tempfile
 import zipfile
 import os
+from PIL import Image
 
+# -------------------------------------------------------------
+# CONFIGURACIÓN PÁGINA
+# -------------------------------------------------------------
 st.set_page_config(
     page_title="Geoportal Económico | División Agropecuaria",
     page_icon="🌾",
@@ -18,15 +22,18 @@ st.set_page_config(
 )
 
 # -------------------------------------------------------------
-# BRANDING & ASESORAMIENTO
+# BRANDING & LOGO LOCAL SEGURO
 # -------------------------------------------------------------
-from PIL import Image
-logo = Image.open("imagen.png")
+if os.path.exists("imagen.png"):
+    logo = Image.open("imagen.png")
+    st.sidebar.image(logo, width=250)
+else:
+    st.sidebar.title("🌱 División Agropecuaria")
 
-st.sidebar.image(logo, width=250)
-st.sidebar.caption("Soluciones en Agricultura de Precisión")
+st.sidebar.caption("Soluciones Integrales en Agricultura de Precisión")
 st.sidebar.markdown("---")
 
+# Información del Asesor
 st.sidebar.subheader("👨‍🌾 Soporte y Asesoramiento")
 st.sidebar.markdown("""
 **Ing. Agr. Rodrigo Díaz Bustos**  
@@ -37,7 +44,7 @@ st.sidebar.markdown("""
 st.sidebar.markdown("---")
 
 # -------------------------------------------------------------
-# CONFIGURACIÓN DEL CAMPO
+# ORGANIZACIÓN DEL CAMPO Y CULTIVO
 # -------------------------------------------------------------
 st.sidebar.header("📁 Organización del Campo")
 productor = st.sidebar.text_input("Productor / Empresa", "División Agropecuaria")
@@ -63,11 +70,18 @@ uploaded_files = st.sidebar.file_uploader(
     accept_multiple_files=True
 )
 
+# -------------------------------------------------------------
+# ENCABEZADO PRINCIPAL
+# -------------------------------------------------------------
 st.title("🌾 Geoportal Económico por Píxel (10x10m)")
-st.markdown("**División Agropecuaria** | *Mapeo dinámico de atributos y unidades de monitores.*")
+st.markdown("**División Agropecuaria** | *Análisis espacial de Margen Bruto por hectárea.*")
+
+# Inicializar sesión de Streamlit para evitar parpadeos
+if 'gdf_resultado' not in st.session_state:
+    st.session_state.gdf_resultado = None
 
 if uploaded_files:
-    # 1. Leer todas las capas subidas
+    # 1. Leer y cargar todas las capas subidas
     gdfs = []
     with tempfile.TemporaryDirectory() as tmpdir:
         for file in uploaded_files:
@@ -82,26 +96,29 @@ if uploaded_files:
             elif file.name.endswith('.kml'):
                 kml_path = os.path.join(tmpdir, file.name)
                 with open(kml_path, "wb") as f:
-                    f.write(kml_path)
+                    f.write(file.getbuffer())
                 gdfs.append(gpd.read_file(kml_path, driver='KML'))
+            elif file.name.endswith('.shp'):
+                shp_path = os.path.join(tmpdir, file.name)
+                with open(shp_path, "wb") as f:
+                    f.write(file.getbuffer())
+                gdfs.append(gpd.read_file(shp_path))
 
-    # Unir todas las columnas disponibles en la interfaz
+    # Obtener todas las columnas de atributos de las capas
     todas_columnas = []
     for gdf in gdfs:
         todas_columnas.extend([c for c in gdf.columns if c != 'geometry'])
-    todas_columnas = list(dict.fromkeys(todas_columnas)) # Eliminar duplicados
+    todas_columnas = list(dict.fromkeys(todas_columnas))
 
     st.subheader("⚙️ Mapeo Interactivo de Columnas y Unidades")
-    st.info("Selecciona la columna del archivo que corresponde a cada parámetro y confirma su unidad.")
+    st.info("Asigna las columnas correspondientes detectadas en los archivos DBF/SHP:")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        # Columna de Rinde
         idx_rinde = next((i for i, c in enumerate(todas_columnas) if any(k in c.lower() for k in ['seco', 'rinde', 'masa', 'yield'])), 0)
         col_selected_rinde = st.selectbox("Columna de Rendimiento (Rinde):", todas_columnas, index=idx_rinde)
 
-        # Configuración Semilla
         if tipo_cultivo == "Soja":
             pms_g = st.number_input("PMS Soja (gramos)", value=155.0)
             costo_semilla_kg = st.number_input("Costo Semilla Soja (USD/kg)", value=1.08)
@@ -111,7 +128,7 @@ if uploaded_files:
             if modo_dosis_soja == "Dosis Variable (de Archivo)":
                 idx_sem = next((i for i, c in enumerate(todas_columnas) if any(k in c.lower() for k in ['prop', 'meta', 'dosis', 'sem'])), 0)
                 col_selected_sem = st.selectbox("Columna Dosis Semilla Soja:", todas_columnas, index=idx_sem)
-                unidad_sem = st.radio("Unidad en el Monitor (Semilla Soja):", ["Semillas / metro", "Miles de semillas / m (0.02 = 20 sem/m)", "Semillas / ha"])
+                unidad_sem = st.radio("Unidad en Monitor (Soja):", ["Semillas / metro", "Miles de semillas / m (0.02 = 20 sem/m)", "Semillas / ha"])
             else:
                 dosis_fija_sem_m = st.number_input("Dosis Fija Semillas/m Soja:", value=20.0)
 
@@ -123,7 +140,6 @@ if uploaded_files:
             dosis_semilla_trigo_kg = st.number_input("Dosis Semilla Trigo (kg/ha)", value=120.0)
 
     with col2:
-        # Configuración Fertilizantes
         if tipo_cultivo == "Soja":
             aplica_ferti_soja = st.checkbox("¿Aplica Fertilizante en Soja?", value=False)
             if aplica_ferti_soja:
@@ -132,9 +148,11 @@ if uploaded_files:
                 if modo_ferti_soja == "Dosis Variable (de Archivo)":
                     idx_ferti = next((i for i, c in enumerate(todas_columnas) if any(k in c.lower() for k in ['part', 'ferti', 'fosf', 'dosis'])), 0)
                     col_selected_ferti_soja = st.selectbox("Columna Fertilizante Soja:", todas_columnas, index=idx_ferti)
+                else:
+                    dosis_fija_ferti_soja = st.number_input("Dosis Fija Ferti Soja (kg/ha):", value=80.0)
 
         elif tipo_cultivo == "Maíz":
-            st.markdown("**Arrancador (Fósforo) / Nitrogenado (Urea):**")
+            st.markdown("**Arrancador (Fósforo) y Nitrogenado (Urea):**")
             costo_arrancador_tn = st.number_input("Costo Arrancador (USD/tn)", value=750.0)
             costo_urea_tn = st.number_input("Costo Urea (USD/tn)", value=550.0)
             
@@ -142,15 +160,16 @@ if uploaded_files:
             if modo_urea == "Dosis Variable (de Archivo)":
                 idx_urea = next((i for i, c in enumerate(todas_columnas) if any(k in c.lower() for k in ['part', 'urea', 'nitro', 'uan'])), 0)
                 col_selected_urea = st.selectbox("Columna Dosis Urea:", todas_columnas, index=idx_urea)
+            else:
+                dosis_fija_urea = st.number_input("Dosis Fija Urea (kg/ha):", value=200.0)
 
-    # Botón para confirmar y calcular
+    # 2. PROCESAMIENTO MATEMÁTICO Y ESPACIAL
     if st.button("🚀 Calcular y Generar Mapa Económico", type="primary"):
-        with st.spinner("Procesando geometrías, unificando unidades y generando grilla 10x10m..."):
-            # Base Spatial
+        with st.spinner("Solapando capas, convirtiendo unidades y generando grilla 10x10m..."):
             base_gdf = gdfs[0].to_crs(epsg=32720)
             base_gdf['geometry'] = base_gdf['geometry'].apply(lambda geom: make_valid(geom) if not geom.is_valid else geom).buffer(0)
             
-            # Grilla 10x10
+            # Grilla de 10x10m
             xmin, ymin, xmax, ymax = base_gdf.total_bounds
             grid_size = 10
             cols = np.arange(xmin, xmax, grid_size)
@@ -160,22 +179,20 @@ if uploaded_files:
             grid = gpd.GeoDataFrame({'geometry': polygons}, crs=base_gdf.crs)
             grid_clipped = gpd.clip(grid, base_gdf)
             
-            # Spatial Join de todas las capas
+            # Unir espacialmente todas las capas
             joined = grid_clipped.copy()
             for idx, gdf in enumerate(gdfs):
                 gdf_utm = gdf.to_crs(epsg=32720)
                 gdf_utm['geometry'] = gdf_utm['geometry'].apply(lambda geom: make_valid(geom) if not geom.is_valid else geom).buffer(0)
                 joined = gpd.sjoin(joined, gdf_utm, how="left", predicate="intersects", rsuffix=f"_{idx}")
 
-            # 1. CÁLCULO DE RINDE
+            # Rinde
             joined['Rinde_tn'] = pd.to_numeric(joined[col_selected_rinde].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
-            # 2. CÁLCULO SEGÚN CULTIVO
+            # Lógica por Cultivo
             if tipo_cultivo == "Soja":
                 if modo_dosis_soja == "Dosis Variable (de Archivo)":
                     raw_sem = pd.to_numeric(joined[col_selected_sem].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-                    
-                    # Conversión flexible de unidades
                     if unidad_sem == "Miles de semillas / m (0.02 = 20 sem/m)":
                         joined['Sem_m'] = raw_sem * 1000.0
                     elif unidad_sem == "Semillas / ha":
@@ -187,10 +204,19 @@ if uploaded_files:
                 
                 sem_ha = joined['Sem_m'] * (10000.0 / dist_surco)
                 costo_sem_ha = (sem_ha * (pms_g / 1000.0) / 1000.0) * costo_semilla_kg
-                costo_ferti_ha = 0.0
                 
+                if aplica_ferti_soja:
+                    if modo_ferti_soja == "Dosis Variable (de Archivo)":
+                        raw_ferti = pd.to_numeric(joined[col_selected_ferti_soja].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+                        joined['Ferti_Soja_kg'] = raw_ferti
+                    else:
+                        joined['Ferti_Soja_kg'] = dosis_fija_ferti_soja
+                    costo_ferti_ha = (joined['Ferti_Soja_kg'] / 1000.0) * costo_ferti_soja_tn
+                else:
+                    costo_ferti_ha = 0.0
+
                 ingreso_ha = joined['Rinde_tn'] * precio_grano
-                margen_ha = ingreso_ha - costo_sem_ha - costo_fijo
+                margen_ha = ingreso_ha - costo_sem_ha - costo_ferti_ha - costo_fijo
 
             elif tipo_cultivo == "Maíz":
                 costo_sem_ha = costo_bolsa
@@ -199,7 +225,7 @@ if uploaded_files:
                     raw_urea = pd.to_numeric(joined[col_selected_urea].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
                     joined['Urea_kg'] = raw_urea
                 else:
-                    joined['Urea_kg'] = 200.0
+                    joined['Urea_kg'] = dosis_fija_urea
                     
                 costo_urea_ha = (joined['Urea_kg'] / 1000.0) * costo_urea_tn
                 ingreso_ha = joined['Rinde_tn'] * precio_grano
@@ -212,57 +238,92 @@ if uploaded_files:
 
             joined['MargenUSD_ha'] = margen_ha.round(2)
             joined['IngresoUSD_ha'] = ingreso_ha.round(2)
-            gdf_resultado = joined.to_crs(epsg=4326)
-
-            st.success(f"Mapa generado con éxito | {productor} - {establecimiento} ({lote_nombre})")
-
-            # Métricas
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Margen Bruto Promedio", f"{gdf_resultado['MargenUSD_ha'].mean():.2f} USD/ha")
-            c2.metric("Rendimiento Promedio", f"{gdf_resultado['Rinde_tn'].mean():.2f} tn/ha")
-            c3.metric("Ingreso Promedio", f"{gdf_resultado['IngresoUSD_ha'].mean():.2f} USD/ha")
-
-            # Visor Leaflet
-            st.subheader("🗺️ Visor Geográfico de Margen Bruto (10x10m)")
-            centro_lat = gdf_resultado.geometry.centroid.y.mean()
-            centro_lon = gdf_resultado.geometry.centroid.x.mean()
             
-            m = folium.Map(location=[centro_lat, centro_lon], zoom_start=15, tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", attr="Google Hybrid")
-            
-            v_min = float(gdf_resultado['MargenUSD_ha'].min())
-            v_max = float(gdf_resultado['MargenUSD_ha'].max())
-            rango = (v_max - v_min) if (v_max - v_min) > 0 else 1.0
+            # Guardar en memoria de sesión
+            st.session_state.gdf_resultado = joined.to_crs(epsg=4326)
 
-            def get_color(val):
-                pct = (val - v_min) / rango
-                if pct < 0.5:
-                    f = pct / 0.5
-                    r = 231 + int((241 - 231) * f)
-                    g = 76 + int((196 - 76) * f)
-                    b = 60 + int((15 - 60) * f)
-                else:
-                    f = (pct - 0.5) / 0.5
-                    r = 241 + int((39 - 241) * f)
-                    g = 196 + int((174 - 196) * f)
-                    b = 15 + int((96 - 15) * f)
-                return f'#{r:02x}{g:02x}{b:02x}'
+# -------------------------------------------------------------
+# VISUALIZACIÓN FIRME EN PANTALLA
+# -------------------------------------------------------------
+if st.session_state.gdf_resultado is not None:
+    gdf_res = st.session_state.gdf_resultado
 
-            folium.GeoJson(
-                gdf_resultado,
-                style_function=lambda feature: {
-                    'fillColor': get_color(feature['properties']['MargenUSD_ha']),
-                    'color': 'black',
-                    'weight': 0.1,
-                    'fillOpacity': 0.65
-                },
-                tooltip=folium.GeoJsonTooltip(
-                    fields=['Rinde_tn', 'IngresoUSD_ha', 'MargenUSD_ha'],
-                    aliases=['Rinde (tn/ha):', 'Ingreso (USD/ha):', 'Margen Bruto (USD/ha):'],
-                    localize=True
-                )
-            ).add_to(m)
+    st.success(f"Mapa procesado con éxito | {productor} - {establecimiento} ({lote_nombre})")
 
-            st_folium(m, width=1100, height=550)
+    # Métricas clave
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Margen Bruto Promedio", f"{gdf_res['MargenUSD_ha'].mean():.2f} USD/ha")
+    c2.metric("Rendimiento Promedio", f"{gdf_res['Rinde_tn'].mean():.2f} tn/ha")
+    c3.metric("Ingreso Promedio", f"{gdf_res['IngresoUSD_ha'].mean():.2f} USD/ha")
+
+    # Visor Geográfico Leaflet
+    st.subheader("🗺️ Visor Geográfico de Margen Bruto (10x10m)")
+    
+    centro_lat = gdf_res.geometry.centroid.y.mean()
+    centro_lon = gdf_res.geometry.centroid.x.mean()
+    
+    m = folium.Map(
+        location=[centro_lat, centro_lon], 
+        zoom_start=15, 
+        tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", 
+        attr="Google Hybrid"
+    )
+    
+    v_min = float(gdf_res['MargenUSD_ha'].min())
+    v_max = float(gdf_res['MargenUSD_ha'].max())
+    rango = (v_max - v_min) if (v_max - v_min) > 0 else 1.0
+
+    def get_color(val):
+        pct = (val - v_min) / rango
+        if pct < 0.5:
+            f = pct / 0.5
+            r = 231 + int((241 - 231) * f)
+            g = 76 + int((196 - 76) * f)
+            b = 60 + int((15 - 60) * f)
+        else:
+            f = (pct - 0.5) / 0.5
+            r = 241 + int((39 - 241) * f)
+            g = 196 + int((174 - 196) * f)
+            b = 15 + int((96 - 15) * f)
+        return f'#{r:02x}{g:02x}{b:02x}'
+
+    folium.GeoJson(
+        gdf_res,
+        style_function=lambda feature: {
+            'fillColor': get_color(feature['properties']['MargenUSD_ha']),
+            'color': 'black',
+            'weight': 0.1,
+            'fillOpacity': 0.65
+        },
+        tooltip=folium.GeoJsonTooltip(
+            fields=['Rinde_tn', 'IngresoUSD_ha', 'MargenUSD_ha'],
+            aliases=['Rinde (tn/ha):', 'Ingreso (USD/ha):', 'Margen Bruto (USD/ha):'],
+            localize=True
+        )
+    ).add_to(m)
+
+    # Leyenda flotante
+    leyenda_html = f'''
+     <div style="
+     position: fixed; 
+     bottom: 30px; right: 30px; width: 220px; height: 110px; 
+     background-color: rgba(255, 255, 255, 0.95);
+     border:2px solid #2e7d32; z-index:9999; font-size:12px;
+     padding: 8px; border-radius: 6px; font-family: sans-serif;">
+     <b>Margen Bruto (USD/ha)</b><br>
+     <div style="background: linear-gradient(to right, #e74c3c, #f1c40f, #27ae60); height: 14px; margin: 5px 0; border-radius:3px;"></div>
+     <div style="display: flex; justify-content: space-between; font-size:11px;">
+        <span><b>Mín:</b> ${v_min:.0f}</span>
+        <span><b>Máx:</b> ${v_max:.0f}</span>
+     </div>
+     <hr style="margin:4px 0; border:0; border-top:1px solid #ccc;"/>
+     <span style="font-size:10px; color:#555;">📍 <b>División Agropecuaria</b></span>
+     </div>
+     '''
+    m.get_root().html.add_child(folium.Element(leyenda_html))
+
+    # Render estático sin refresco automático
+    st_folium(m, width=1100, height=550, returned_objects=[])
 
 else:
-    st.info("👈 Sube los archivos del lote en el panel izquierdo para comenzar.")
+    st.info("👈 Completa los parámetros en el panel izquierdo y sube los archivos (.zip, .shp o .kml) para generar el mapa.")
