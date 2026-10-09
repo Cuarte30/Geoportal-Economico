@@ -20,9 +20,10 @@ st.set_page_config(
 # -------------------------------------------------------------
 # BRANDING & ASESORAMIENTO
 # -------------------------------------------------------------
-LOGO_URL = "https://www.divisionagropecuaria.com.ar/" 
+from PIL import Image
+logo = Image.open("imagen.png")
 
-st.sidebar.image(LOGO_URL, width=110)
+st.sidebar.image(logo, width=110)
 st.sidebar.title("División Agropecuaria")
 st.sidebar.caption("Soluciones en Agricultura de Precisión")
 st.sidebar.markdown("---")
