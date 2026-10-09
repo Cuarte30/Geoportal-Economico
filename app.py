@@ -20,7 +20,7 @@ st.set_page_config(
 # -------------------------------------------------------------
 # BRANDING & ASESORAMIENTO
 # -------------------------------------------------------------
-LOGO_URL = "https://cdn-icons-png.flaticon.com/512/2933/2933902.png" 
+LOGO_URL = "https://www.divisionagropecuaria.com.ar/" 
 
 st.sidebar.image(LOGO_URL, width=110)
 st.sidebar.title("División Agropecuaria")
